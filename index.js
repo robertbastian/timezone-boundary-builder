@@ -127,69 +127,6 @@ function getTimezonePopulation (zone) {
   return zoneData.aliasFor ? 0 : zoneData.population
 }
 
-let tzdbInitialized = false
-function getZoneCfgSinceTime (cutoffTime, cacheFilename) {
-  // load cache and return immediately if it exists
-  const cachedConfig = loadJsonCacheSync(cacheFilename)
-  if (Object.keys(cachedConfig).length > 0) {
-    return cachedConfig
-  }
-
-  if (!tzdbInitialized) {
-    // initialize the tubular time to make sure it has all the latest zones
-    time.initTimezoneLarge()
-    tzdbInitialized = true
-  }
-
-  const newZoneCfg = {}
-
-  // Iterate through all zones to determine which share same timekeeping method since cutoff time
-  const timekeepingPatternZones = {}
-  Object.keys(zoneCfg).forEach(zone => {
-    // calculate which offset pattern this zone follows and add it to list
-    const timezoneInstance = time.Timezone.from(zone)
-    const currentZoneOffset = timezoneInstance.getOffsetForWallTime(timezoneInstance)
-    let timekeepingKey = `${currentZoneOffset}`
-    // Offset-only zones (Etc/UTC, Etc/GMT-3, etc) return null instead of an empty list
-    const transitions = timezoneInstance.getAllTransitions() || []
-
-    const futureTransitionsHash = hashMd5(transitions.filter(t => t.transitionTime > cutoffTime))
-    timekeepingKey = `${currentZoneOffset}-${futureTransitionsHash}`
-
-    if (!timekeepingPatternZones[timekeepingKey]) {
-      timekeepingPatternZones[timekeepingKey] = []
-    }
-    timekeepingPatternZones[timekeepingKey].push(zone)
-  })
-
-  // iterate through each set of zones with the same future timekeeping method to determine
-  // which has the largest population
-  Object.keys(timekeepingPatternZones).forEach(k => {
-    timekeepingPatternZones[k].sort((a, b) => getTimezonePopulation(b) - getTimezonePopulation(a))
-    newZoneCfg[timekeepingPatternZones[k][0]] = timekeepingPatternZones[k]
-  })
-
-  writeJsonSync(cacheFilename, newZoneCfg)
-
-  return newZoneCfg
-}
-
-if (!argv.skip_now_zones) {
-  console.log('Generating zone config for zones with the same timekeeping method since now')
-  zoneCfgNow = getZoneCfgSinceTime(
-    (new Date()).getTime(),
-    path.join(cacheDir, 'zone-config-now.json')
-  )
-}
-
-if (!argv.skip_1970_zones) {
-  console.log('Generating zone config for zones with the same timekeeping method since 1970')
-  zoneCfg1970 = getZoneCfgSinceTime(
-    0,
-    path.join(cacheDir, 'zone-config-1970.json')
-  )
-}
-
 // allow building of only a specified zones
 let includedZones = []
 let excludedZones = []
@@ -252,6 +189,108 @@ if (argv.included_zones || argv.excluded_zones) {
   })
 
   osmBoundarySources = newOsmBoundarySources
+}
+
+let oceanZones = [
+  { tzid: 'Etc/GMT-12', left: 172.5, right: 180 },
+  { tzid: 'Etc/GMT-11', left: 157.5, right: 172.5 },
+  { tzid: 'Etc/GMT-10', left: 142.5, right: 157.5 },
+  { tzid: 'Etc/GMT-9', left: 127.5, right: 142.5 },
+  { tzid: 'Etc/GMT-8', left: 112.5, right: 127.5 },
+  { tzid: 'Etc/GMT-7', left: 97.5, right: 112.5 },
+  { tzid: 'Etc/GMT-6', left: 82.5, right: 97.5 },
+  { tzid: 'Etc/GMT-5', left: 67.5, right: 82.5 },
+  { tzid: 'Etc/GMT-4', left: 52.5, right: 67.5 },
+  { tzid: 'Etc/GMT-3', left: 37.5, right: 52.5 },
+  { tzid: 'Etc/GMT-2', left: 22.5, right: 37.5 },
+  { tzid: 'Etc/GMT-1', left: 7.5, right: 22.5 },
+  { tzid: 'Etc/GMT', left: -7.5, right: 7.5 },
+  { tzid: 'Etc/GMT+1', left: -22.5, right: -7.5 },
+  { tzid: 'Etc/GMT+2', left: -37.5, right: -22.5 },
+  { tzid: 'Etc/GMT+3', left: -52.5, right: -37.5 },
+  { tzid: 'Etc/GMT+4', left: -67.5, right: -52.5 },
+  { tzid: 'Etc/GMT+5', left: -82.5, right: -67.5 },
+  { tzid: 'Etc/GMT+6', left: -97.5, right: -82.5 },
+  { tzid: 'Etc/GMT+7', left: -112.5, right: -97.5 },
+  { tzid: 'Etc/GMT+8', left: -127.5, right: -112.5 },
+  { tzid: 'Etc/GMT+9', left: -142.5, right: -127.5 },
+  { tzid: 'Etc/GMT+10', left: -157.5, right: -142.5 },
+  { tzid: 'Etc/GMT+11', left: -172.5, right: -157.5 },
+  { tzid: 'Etc/GMT+12', left: -180, right: -172.5 }
+]
+
+if (includedZones.length > 0) {
+  oceanZones = oceanZones.filter(oceanZone => includedZones.indexOf(oceanZone) > -1)
+}
+if (excludedZones.length > 0) {
+  oceanZones = oceanZones.filter(oceanZone => excludedZones.indexOf(oceanZone) === -1)
+}
+
+function isOceanZone(tzid) {
+  return oceanZones.find((z) => z.tzid == tzid) !== undefined
+}
+
+let tzdbInitialized = false
+function getZoneCfgSinceTime (cutoffTime, cacheFilename) {
+  // load cache and return immediately if it exists
+  const cachedConfig = loadJsonCacheSync(cacheFilename)
+  if (Object.keys(cachedConfig).length > 0) {
+    return cachedConfig
+  }
+
+  if (!tzdbInitialized) {
+    // initialize the tubular time to make sure it has all the latest zones
+    time.initTimezoneLarge()
+    tzdbInitialized = true
+  }
+
+  const newZoneCfg = {}
+
+  // Iterate through all zones to determine which share same timekeeping method since cutoff time
+  const timekeepingPatternZones = {}
+  Object.keys(zoneCfg).concat(oceanZones.map((z) => z.tzid)).forEach(zone => {
+    // calculate which offset pattern this zone follows and add it to list
+    const timezoneInstance = time.Timezone.from(zone)
+    const currentZoneOffset = timezoneInstance.getOffsetForWallTime(timezoneInstance)
+    let timekeepingKey = `${currentZoneOffset}`
+    // Offset-only zones (Etc/UTC, Etc/GMT-3, etc) return null instead of an empty list
+    const transitions = timezoneInstance.getAllTransitions() || []
+
+    const futureTransitionsHash = hashMd5(transitions.filter(t => t.transitionTime > cutoffTime))
+    timekeepingKey = `${currentZoneOffset}-${futureTransitionsHash}`
+
+    if (!timekeepingPatternZones[timekeepingKey]) {
+      timekeepingPatternZones[timekeepingKey] = []
+    }
+    timekeepingPatternZones[timekeepingKey].push(zone)
+  })
+
+  // iterate through each set of zones with the same future timekeeping method to determine
+  // which has the largest population
+  Object.keys(timekeepingPatternZones).forEach(k => {
+    timekeepingPatternZones[k].sort((a, b) => getTimezonePopulation(b) - getTimezonePopulation(a))
+    newZoneCfg[timekeepingPatternZones[k][0]] = timekeepingPatternZones[k]
+  })
+
+  writeJsonSync(cacheFilename, newZoneCfg)
+
+  return newZoneCfg
+}
+
+if (!argv.skip_now_zones) {
+  console.log('Generating zone config for zones with the same timekeeping method since now')
+  zoneCfgNow = getZoneCfgSinceTime(
+    (new Date()).getTime(),
+    path.join(cacheDir, 'zone-config-now.json')
+  )
+}
+
+if (!argv.skip_1970_zones) {
+  console.log('Generating zone config for zones with the same timekeeping method since 1970')
+  zoneCfg1970 = getZoneCfgSinceTime(
+    0,
+    path.join(cacheDir, 'zone-config-1970.json')
+  )
 }
 
 const geoJsonReader = new jsts.io.GeoJSONReader()
@@ -649,12 +688,6 @@ function getDataSource (source) {
     geoJson = polygon(source.data).geometry
   } else if (source.source === 'manual-multipolygon') {
     geoJson = multiPolygon(source.data).geometry
-  } else if (source.source === 'final') {
-    geoJson = require(getFinalTzOutputFilename(source.id))
-  } else if (source.source === 'final1970') {
-    geoJson = require(getFinal1970TzOutputFilename(source.id))
-  } else if (source.source === 'finalNow') {
-    geoJson = require(getFinalNowTzOutputFilename(source.id))
   } else {
     const err = new Error('unknown source: ' + source.source)
     throw err
@@ -850,16 +883,36 @@ function makeDerivedTimezoneBoundaries (strategy, callback) {
           outputFilename: cfg.getFinalTzFilenameFn(tzid),
           calculateFn: calculateCb => {
             console.log(message)
-            let geom = getDataSource({ source: 'final', id: tzid })
 
-            cfg.derivedZoneConfig[tzid].forEach(zone => {
-              console.log('-', zone)
-              if (zone === tzid) return
-              const zoneData = getDataSource({ source: 'final', id: zone })
-              geom = debugGeo('union', geom, zoneData)
-            })
+            let geom
+            if (isOceanZone(tzid)) {
+              geom = postProcessZone(geoJsonToGeom(oceanZoneBoundaries.filter(z => z.tzid == tzid)[0].geom))
+            } else {
+              geom = finalZones[tzid]
 
-            calculateCb(null, postProcessZone(geom))
+              cfg.derivedZoneConfig[tzid].forEach(zone => {
+                if (zone === tzid) return
+                if (isOceanZone(zone)) return
+                console.log('-', zone)
+                const zoneData = finalZones[zone]
+                geom = debugGeo('union', geom, zoneData)
+              })
+
+              // Add at most one ocean zone
+              let geomNoOcean = geom
+              let oceanZone = !isOceanZone(tzid) && cfg.derivedZoneConfig[tzid].find(zone => isOceanZone(zone));
+              if (oceanZone) {
+                  const zoneData = geoJsonToGeom(oceanZoneBoundaries.filter(z => z.tzid == oceanZone)[0].geom)
+                  geom = debugGeo('union', geom, zoneData)
+                  geom = postProcessZone(geom)
+                  geomNoOcean = postProcessZone(geomNoOcean)
+              } else {
+                geom = postProcessZone(geom)
+                geomNoOcean = geom
+              }
+            }
+
+            calculateCb(null, geom)
           },
           callback: cb
         })
@@ -876,21 +929,41 @@ function makeDerivedTimezoneBoundaries (strategy, callback) {
 function loadFinalZonesIntoMemory () {
   console.log('load zones into memory')
   Object.keys(zoneCfg).forEach(tzid => {
-    finalZones[tzid] = getDataSource({ source: 'final', id: tzid })
+    if (!isOceanZone(tzid)) {
+      finalZones[tzid] = geoJsonToGeom(require(getFinalTzOutputFilename(tzid)))
+    }
   })
 }
 
 function loadFinal1970ZonesIntoMemory () {
   console.log('load 1970 zones into memory')
   Object.keys(zoneCfg1970).forEach(tzid => {
-    final1970Zones[tzid] = getDataSource({ source: 'final1970', id: tzid })
+    final1970Zones[tzid] = geoJsonToGeom(require(getFinal1970TzOutputFilename(tzid)))
+  })
+}
+
+function loadFinal1970OceanZonesIntoMemory () {
+  console.log('load 1970 zones into memory')
+  Object.keys(zoneCfg1970).forEach(tzid => {
+    final1970Zones[tzid] = geoJsonToGeom(isOceanZone(tzid)
+      ? oceanZoneBoundaries.filter(ocean => ocean.tzid == tzid)[0].geom
+      : require(getFinal1970TzOutputFilename(tzid)))
   })
 }
 
 function loadFinalNowZonesIntoMemory () {
   console.log('load Now zones into memory')
   Object.keys(zoneCfgNow).forEach(tzid => {
-    finalNowZones[tzid] = getDataSource({ source: 'finalNow', id: tzid })
+    finalNowZones[tzid] = geoJsonToGeom(require(getFinalNowTzOutputFilename(tzid)))
+  })
+}
+
+function loadFinalNowOceanZonesIntoMemory () {
+  console.log('load Now zones into memory')
+  Object.keys(zoneCfgNow).forEach(tzid => {
+    finalNowZones[tzid] = geoJsonToGeom(isOceanZone(tzid)
+      ? oceanZoneBoundaries.filter(ocean => ocean.tzid == tzid)[0].geom
+      : require(getFinalNowTzOutputFilename(tzid)))
   })
 }
 
@@ -1081,40 +1154,6 @@ function validateTimezoneBoundaries (callback) {
 }
 
 let oceanZoneBoundaries
-let oceanZones = [
-  { tzid: 'Etc/GMT-12', left: 172.5, right: 180 },
-  { tzid: 'Etc/GMT-11', left: 157.5, right: 172.5 },
-  { tzid: 'Etc/GMT-10', left: 142.5, right: 157.5 },
-  { tzid: 'Etc/GMT-9', left: 127.5, right: 142.5 },
-  { tzid: 'Etc/GMT-8', left: 112.5, right: 127.5 },
-  { tzid: 'Etc/GMT-7', left: 97.5, right: 112.5 },
-  { tzid: 'Etc/GMT-6', left: 82.5, right: 97.5 },
-  { tzid: 'Etc/GMT-5', left: 67.5, right: 82.5 },
-  { tzid: 'Etc/GMT-4', left: 52.5, right: 67.5 },
-  { tzid: 'Etc/GMT-3', left: 37.5, right: 52.5 },
-  { tzid: 'Etc/GMT-2', left: 22.5, right: 37.5 },
-  { tzid: 'Etc/GMT-1', left: 7.5, right: 22.5 },
-  { tzid: 'Etc/GMT', left: -7.5, right: 7.5 },
-  { tzid: 'Etc/GMT+1', left: -22.5, right: -7.5 },
-  { tzid: 'Etc/GMT+2', left: -37.5, right: -22.5 },
-  { tzid: 'Etc/GMT+3', left: -52.5, right: -37.5 },
-  { tzid: 'Etc/GMT+4', left: -67.5, right: -52.5 },
-  { tzid: 'Etc/GMT+5', left: -82.5, right: -67.5 },
-  { tzid: 'Etc/GMT+6', left: -97.5, right: -82.5 },
-  { tzid: 'Etc/GMT+7', left: -112.5, right: -97.5 },
-  { tzid: 'Etc/GMT+8', left: -127.5, right: -112.5 },
-  { tzid: 'Etc/GMT+9', left: -142.5, right: -127.5 },
-  { tzid: 'Etc/GMT+10', left: -157.5, right: -142.5 },
-  { tzid: 'Etc/GMT+11', left: -172.5, right: -157.5 },
-  { tzid: 'Etc/GMT+12', left: -180, right: -172.5 }
-]
-
-if (includedZones.length > 0) {
-  oceanZones = oceanZones.filter(oceanZone => includedZones.indexOf(oceanZone) > -1)
-}
-if (excludedZones.length > 0) {
-  oceanZones = oceanZones.filter(oceanZone => excludedZones.indexOf(oceanZone) === -1)
-}
 
 function addOceans (callback) {
   console.log('adding ocean boundaries')
@@ -1207,43 +1246,46 @@ function combineAndWriteZones (callback) {
   })
   if (!argv.skip_1970_zones) {
     Object.keys(zoneCfg1970).forEach(zoneName => {
+      if (!isOceanZone(zoneName)) {
+        const feature = {
+          type: 'Feature',
+          properties: { tzid: zoneName },
+          // todo use non-ocean-merged geometry
+          geometry: geomToGeoJson(final1970Zones[zoneName])
+        }
+        const stringified = JSON.stringify(feature)
+        regular1970Writer.add(stringified)
+      }
       const feature = {
         type: 'Feature',
         properties: { tzid: zoneName },
         geometry: geomToGeoJson(final1970Zones[zoneName])
       }
       const stringified = JSON.stringify(feature)
-      regular1970Writer.add(stringified)
       ocean1970Writer.add(stringified)
     })
   }
   if (!argv.skip_now_zones) {
     Object.keys(zoneCfgNow).forEach(zoneName => {
+      if (!isOceanZone(zoneName)) {
+        const feature = {
+          type: 'Feature',
+          properties: { tzid: zoneName },
+          geometry: geomToGeoJson(finalNowZones[zoneName])
+        }
+        const stringified = JSON.stringify(feature)
+        regularNowWriter.add(stringified)
+      }
       const feature = {
         type: 'Feature',
         properties: { tzid: zoneName },
+        // todo use non-ocean-merged geometry
         geometry: geomToGeoJson(finalNowZones[zoneName])
       }
       const stringified = JSON.stringify(feature)
-      regularNowWriter.add(stringified)
       oceanNowWriter.add(stringified)
     })
   }
-  oceanZoneBoundaries.forEach(boundary => {
-    const feature = {
-      type: 'Feature',
-      properties: { tzid: boundary.tzid },
-      geometry: boundary.geom
-    }
-    const stringified = JSON.stringify(feature)
-    oceanWriter.add(stringified)
-    if (!argv.skip_1970_zones) {
-      ocean1970Writer.add(stringified)
-    }
-    if (!argv.skip_now_zones) {
-      oceanNowWriter.add(stringified)
-    }
-  })
   const writerEnders = [
     cb => regularWriter.end(cb),
     cb => oceanWriter.end(cb)
@@ -1635,7 +1677,12 @@ const autoScript = {
       validateTimezoneBoundaries(cb)
     }
   }],
-  create1970zones: ['validateZones', (results, cb) => {
+  addOceans: ['validateZones', function (results, cb) {
+    overallProgress.beginTask('Adding oceans')
+    addOceans(cb)
+  }],
+  create1970zones: ['addOceans', (results, cb) => {
+    console.log(oceanZoneBoundaries);
     if (argv.skip_1970_zones) {
       overallProgress.beginTask('WARNING: Skipping creation of 1970 zones!')
       cb()
@@ -1644,7 +1691,7 @@ const autoScript = {
     overallProgress.beginTask('Creating 1970 timezone boundaries')
     makeDerivedTimezoneBoundaries('1970', cb)
   }],
-  createNowZones: ['validateZones', (results, cb) => {
+  createNowZones: ['addOceans', (results, cb) => {
     if (argv.skip_now_zones) {
       overallProgress.beginTask('WARNING: Skipping creation of now zones!')
       cb()
@@ -1653,11 +1700,7 @@ const autoScript = {
     overallProgress.beginTask('Creating now timezone boundaries')
     makeDerivedTimezoneBoundaries('now', cb)
   }],
-  addOceans: ['validateZones', function (results, cb) {
-    overallProgress.beginTask('Adding oceans')
-    addOceans(cb)
-  }],
-  mergeZones: ['addOceans', 'create1970zones', 'createNowZones', function (results, cb) {
+  mergeZones: ['create1970zones', 'createNowZones', function (results, cb) {
     overallProgress.beginTask('Merging zones')
     combineAndWriteZones(cb)
   }],
