@@ -1,3 +1,10 @@
+## 2026b
+
+### Zone Changes
+
+* Update to latest OSM data.
+* Recalculate timezones since 1970 and timezones since now with most recent timezone database data.
+
 ## 2026a
 
 ### Zone Changes
